@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kanban Task Tracker</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
+    <style>
+        /* Custom styles for draggable elements and drop zones */
+        body {
+            font-family: 'Inter', sans-serif; /* Using Inter font */
+        }
+        .kanban-column {
+            min-height: 300px; /* Ensure columns have a minimum height */
+            transition: background-color 0.2s ease-in-out; /* Smooth transition for dragover */
+        }
+        .task {
+            cursor: grab; /* Indicate draggable item */
+            transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+        }
+        .task.dragging {
+            opacity: 0.5;
+            cursor: grabbing;
+            transform: scale(1.05); /* Slightly enlarge dragged item */
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); /* Add shadow when dragging */
+        }
+        .drag-over {
+            background-color: rgba(113, 184, 255, 0.2); /* Light blue highlight on drag over */
+            border: 2px dashed #60a5fa; /* Dashed border */
+        }
+        /* Add some basic styling for the confetti canvas if needed */
+        #confetti-canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none; /* Allow clicks to pass through */
+            z-index: 9999;
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-blue-100 to-purple-100 min-h-screen p-8">
+
+    <div class="container mx-auto max-w-6xl">
+        <h1 class="text-4xl font-bold text-center text-gray-800 mb-8">Kanban Task Tracker</h1>
+
+        <div class="mb-8 p-4 bg-white rounded-lg shadow-md flex gap-4 items-center">
+            <input type="text" id="newTaskInput" placeholder="Enter new task..." class="flex-grow p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <button id="addTaskBtn" class="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded-md transition duration-200 shadow">
+                Add Task
+            </button>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+
+            <div id="todo" class="kanban-column bg-gray-100 p-4 rounded-lg shadow-md">
+                <h2 class="text-xl font-semibold text-gray-700 mb-4 text-center border-b-2 border-red-300 pb-2">To Do</h2>
+                <div class="space-y-3 task-list min-h-[200px]">
+                    </div>
+            </div>
+
+            <div id="inprogress" class="kanban-column bg-gray-100 p-4 rounded-lg shadow-md">
+                <h2 class="text-xl font-semibold text-gray-700 mb-4 text-center border-b-2 border-yellow-300 pb-2">In Progress</h2>
+                <div class="space-y-3 task-list min-h-[200px]">
+                    </div>
+            </div>
+
+            <div id="done" class="kanban-column bg-gray-100 p-4 rounded-lg shadow-md">
+                <h2 class="text-xl font-semibold text-gray-700 mb-4 text-center border-b-2 border-green-300 pb-2">Done</h2>
+                <div class="space-y-3 task-list min-h-[200px]">
+                     </div>
+            </div>
+        </div>
+    </div>
+
+    <canvas id="confetti-canvas"></canvas>
+
+    <script>
+        // --- DOM Elements ---
+        const columns = document.querySelectorAll('.kanban-column');
+        const taskLists = document.querySelectorAll('.task-list');
+        const newTaskInput = document.getElementById('newTaskInput');
+        const addTaskBtn = document.getElementById('addTaskBtn');
+        const todoList = document.querySelector('#todo .task-list');
+        const doneColumn = document.getElementById('done');
+
+        // --- State ---
+        let draggedTask = null; // Holds the task being dragged
+        let taskIdCounter = 0; // Simple counter for unique task IDs
+
+        // --- Functions ---
+
+        /**
+         * Creates a new task element.
+         * @param {string} text - The text content of the task.
+         * @param {string} id - The unique ID for the task.
+         * @returns {HTMLElement} The created task element.
+         */
+        function createTaskElement(text, id) {
+            const task = document.createElement('div');
+            task.classList.add('task', 'bg-white', 'p-3', 'rounded-md', 'shadow');
+            task.setAttribute('draggable', 'true');
+            task.id = id;
+            task.textContent = text;
+
+            // Add drag event listeners to the new task
+            task.addEventListener('dragstart', handleDragStart);
+            task.addEventListener('dragend', handleDragEnd);
+
+            return task;
+        }
+
+        /**
+         * Adds a new task to the "To Do" column.
+         */
+        function addTask() {
+            const taskText = newTaskInput.value.trim();
+            if (taskText === '') {
+                // Optional: Add user feedback for empty input
+                console.warn("Task input is empty.");
+                return;
+            }
+
+            taskIdCounter++;
+            const newTaskId = `task-${taskIdCounter}`;
+            const newTask = createTaskElement(taskText, newTaskId);
+            todoList.appendChild(newTask);
+            newTaskInput.value = ''; // Clear the input field
+            console.log(`Task added: ${taskText} (ID: ${newTaskId})`);
+        }
+
+        /**
+         * Triggers the confetti animation.
+         */
+        function triggerConfetti() {
+            const canvas = document.getElementById('confetti-canvas');
+            // Ensure confetti library is loaded
+            if (typeof confetti === 'function') {
+                 const myConfetti = confetti.create(canvas, {
+                    resize: true, // Resize canvas with window
+                    useWorker: true // Use worker for better performance
+                 });
+
+                 // Launch confetti!
+                 myConfetti({
+                    particleCount: 150, // Number of confetti particles
+                    spread: 90,       // How wide the confetti spreads
+                    origin: { y: 0.6 } // Start confetti slightly below the top
+                 });
+                 console.log("Confetti triggered!");
+            } else {
+                console.error("Confetti library not loaded.");
+            }
+        }
+
+        // --- Event Handlers ---
+
+        /**
+         * Handles the start of a drag operation.
+         * @param {DragEvent} event - The drag event object.
+         */
+        function handleDragStart(event) {
+            draggedTask = event.target; // Store the dragged element
+            event.dataTransfer.setData('text/plain', event.target.id); // Set data for transfer (needed for Firefox)
+            setTimeout(() => {
+                event.target.classList.add('dragging'); // Add visual cue for dragging
+            }, 0); // Use setTimeout to allow the browser to render the drag image
+            console.log(`Dragging started: ${event.target.id}`);
+        }
+
+        /**
+         * Handles the end of a drag operation.
+         * @param {DragEvent} event - The drag event object.
+         */
+        function handleDragEnd(event) {
+            if (draggedTask) {
+                draggedTask.classList.remove('dragging'); // Remove dragging style
+            }
+            draggedTask = null; // Clear the dragged task reference
+            // Remove drag-over styles from all columns
+            columns.forEach(col => col.classList.remove('drag-over'));
+            console.log("Dragging ended.");
+        }
+
+        /**
+         * Handles when a draggable element is dragged over a drop zone.
+         * @param {DragEvent} event - The drag event object.
+         */
+        function handleDragOver(event) {
+            event.preventDefault(); // Necessary to allow dropping
+            const targetColumn = event.currentTarget; // The column being dragged over
+            if (targetColumn.classList.contains('kanban-column')) {
+                 targetColumn.classList.add('drag-over'); // Add visual feedback
+            }
+        }
+
+         /**
+         * Handles when a draggable element leaves a drop zone.
+         * @param {DragEvent} event - The drag event object.
+         */
+        function handleDragLeave(event) {
+            const targetColumn = event.currentTarget;
+             if (targetColumn.classList.contains('kanban-column')) {
+                 targetColumn.classList.remove('drag-over'); // Remove visual feedback
+             }
+        }
+
+
+        /**
+         * Handles the drop event on a column.
+         * @param {DragEvent} event - The drop event object.
+         */
+        function handleDrop(event) {
+            event.preventDefault(); // Prevent default drop behavior
+            const targetColumn = event.currentTarget; // The column where the drop occurred
+            const targetList = targetColumn.querySelector('.task-list');
+
+            if (targetList && draggedTask && targetList !== draggedTask.parentNode) {
+                targetList.appendChild(draggedTask); // Move the task element
+                console.log(`Task ${draggedTask.id} dropped into ${targetColumn.id}`);
+
+                // --- Confetti Trigger ---
+                if (targetColumn.id === 'done') {
+                    triggerConfetti();
+                    // Optional: Add styling to completed tasks
+                    draggedTask.classList.add('bg-green-100', 'line-through', 'text-gray-500');
+                    draggedTask.classList.remove('bg-white');
+                } else {
+                     // Remove done styling if moved out of 'Done'
+                    draggedTask.classList.remove('bg-green-100', 'line-through', 'text-gray-500');
+                    draggedTask.classList.add('bg-white');
+                }
+            }
+             // Clean up drag-over styles
+            targetColumn.classList.remove('drag-over');
+        }
+
+        // --- Event Listeners ---
+
+        // Add task button listener
+        addTaskBtn.addEventListener('click', addTask);
+
+        // Add listener for Enter key in the input field
+        newTaskInput.addEventListener('keypress', (event) => {
+            if (event.key === 'Enter') {
+                addTask();
+            }
+        });
+
+        // Add drag/drop listeners to columns
+        columns.forEach(column => {
+            column.addEventListener('dragover', handleDragOver);
+            column.addEventListener('dragleave', handleDragLeave);
+            column.addEventListener('drop', handleDrop);
+        });
+
+        // --- Initial Setup ---
+        // You could potentially load initial tasks here, e.g., from localStorage
+        console.log("Kanban board initialized.");
+        // Add a couple of example tasks initially
+        todoList.appendChild(createTaskElement("Design the user interface", `task-${++taskIdCounter}`));
+        todoList.appendChild(createTaskElement("Set up the project structure", `task-${++taskIdCounter}`));
+
+    </script>
+
+</body>
+</html>
